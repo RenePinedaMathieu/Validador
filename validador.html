@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Validador de Drivers</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background:#f7f8fa; padding:20px; color:#222; }
+    .card { background:#fff; border-radius:12px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.08); max-width:1000px; margin:auto; }
+    h1 { font-size:1.3rem; margin-bottom:12px; }
+    select, button, input, textarea {
+      padding:8px 12px; border-radius:8px; border:1px solid #ccc; font-size:14px;
+    }
+    button { background:#4f46e5; color:white; border:none; cursor:pointer; }
+    button:disabled { background:#999; cursor:not-allowed; }
+    table { border-collapse:collapse; width:100%; margin-top:16px; }
+    th, td { border:1px solid #ddd; padding:6px 8px; text-align:center; }
+    th { background:#f0f0f5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Validador de Propuestas - Drivers</h1>
+    <div>
+      <label>Token validador:</label>
+      <input id="tokenInput" placeholder="Ej: vali-123" style="width:220px;">
+      <button onclick="guardarToken()">Ingresar</button>
+    </div>
+    <div id="listaContainer" style="margin-top:16px;"></div>
+    <div id="detalleContainer" style="margin-top:16px;"></div>
+  </div>
+
+  <script>
+    const API_URL = "http://localhost:8000"; // cambia esto luego por tu URL Cloud Run
+    let API_KEY = "";
+    let propuestas = [];
+
+    async function guardarToken() {
+      API_KEY = document.getElementById("tokenInput").value.trim();
+      if (!API_KEY) return alert("Ingrese un token válido.");
+      alert("Token guardado. Cargando propuestas...");
+      cargarPendientes();
+    }
+
+    async function cargarPendientes() {
+      const res = await fetch(`${API_URL}/pendientes-aprobacion`, {
+        headers: { "Authorization": "Bearer " + API_KEY }
+      });
+      if (!res.ok) return alert("Error al cargar propuestas.");
+      propuestas = await res.json();
+      if (!propuestas.length) {
+        document.getElementById("listaContainer").innerHTML = "<p>No hay propuestas pendientes.</p>";
+        return;
+      }
+      let html = "<table><tr><th>ID</th><th>Orden</th><th>Driver</th><th>Acción</th></tr>";
+      propuestas.forEach(p => {
+        html += `<tr>
+          <td>${p.propuesta_id}</td>
+          <td>${p.orden_estadistica}</td>
+          <td>${p.nombre_driver}</td>
+          <td><button onclick="verDetalle('${p.propuesta_id}')">Ver detalle</button></td>
+        </tr>`;
+      });
+      html += "</table>";
+      document.getElementById("listaContainer").innerHTML = html;
+    }
+
+    async function verDetalle(pid) {
+      const res = await fetch(`${API_URL}/detalle-propuesta?propuesta_id=${pid}`, {
+        headers: { "Authorization": "Bearer " + API_KEY }
+      });
+      if (!res.ok) return alert("Error al cargar detalle.");
+      const data = await res.json();
+      let html = `<h3>Propuesta ${pid}</h3>`;
+      html += `<table><tr><th>Empresa</th><th>Actual (%)</th><th>Propuesto (%)</th></tr>`;
+      data.forEach(d => {
+        html += `<tr>
+          <td>${d.empresa}</td>
+          <td>${d.porcentaje_actual}</td>
+          <td>${d.porcentaje_nuevo}</td>
+        </tr>`;
+      });
+      html += `</table>
+        <textarea id="comentario" rows="2" style="width:100%; margin-top:8px;" placeholder="Comentario opcional si rechazas..."></textarea>
+        <div style="margin-top:8px;">
+          <button onclick="aprobar('${pid}')">✅ Aprobar</button>
+          <button onclick="rechazar('${pid}')">❌ Rechazar</button>
+        </div>`;
+      document.getElementById("detalleContainer").innerHTML = html;
+    }
+
+    async function aprobar(pid) {
+      if (!confirm("¿Seguro que deseas aprobar y aplicar los cambios?")) return;
+      const res = await fetch(`${API_URL}/aprobar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + API_KEY },
+        body: JSON.stringify({ propuesta_id: pid, orden_estadistica: "", nombre_driver: "", empresas: [] })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert("Error: " + (data.detail || res.statusText));
+      alert("✅ " + data.mensaje);
+      cargarPendientes();
+      document.getElementById("detalleContainer").innerHTML = "";
+    }
+
+    async function rechazar(pid) {
+      const comentario = document.getElementById("comentario").value;
+      if (!confirm("¿Rechazar esta propuesta?")) return;
+      const res = await fetch(`${API_URL}/rechazar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + API_KEY },
+        body: JSON.stringify({ propuesta_id: pid, comentario })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert("Error: " + (data.detail || res.statusText));
+      alert("❌ " + data.mensaje);
+      cargarPendientes();
+      document.getElementById("detalleContainer").innerHTML = "";
+    }
+  </script>
+</body>
+</html>
